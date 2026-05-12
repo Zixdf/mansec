@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>钓鱼邮件视觉感知系统</title>
+    <style>
+        /* ================= 基础重置与全局样式 ================= */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f5f7fa; color: #333; padding: 20px; }
+
+        /* 核心布局：最大宽度限制与网格间距 */
+        .dashboard-container { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+        /* 上半部分：四列网格布局 (CSS Grid) */
+        .top-panel { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+
+        /* ================= 卡片通用样式 ================= */
+        .card { background: #ffffff; border-radius: 8px; border: 1px solid #ebeef5; padding: 20px; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.05); display: flex; flex-direction: column; }
+        .card-header { font-size: 16px; font-weight: 600; margin-bottom: 15px; color: #303133; padding-bottom: 10px; border-bottom: 1px solid #ebeef5; }
+
+        /* ================= 区域 1：上传区 ================= */
+        .upload-area { border: 2px dashed #c0c4cc; border-radius: 6px; padding: 40px 20px; text-align: center; color: #909399; margin-bottom: 15px; cursor: pointer; transition: 0.3s; flex-grow: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        .upload-area:hover { border-color: #409eff; color: #409eff; }
+        .upload-icon { font-size: 40px; margin-bottom: 10px; }
+        .btn { width: 100%; padding: 10px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; font-weight: 500; transition: 0.2s; margin-bottom: 10px; }
+        .btn-primary { background-color: #0052d9; color: white; }
+        .btn-primary:hover { background-color: #0041ab; }
+        .btn-outline { background-color: white; color: #0052d9; border: 1px solid #0052d9; }
+        .btn-outline:hover { background-color: #f0f5ff; }
+
+        /* ================= 区域 2 & 3：图片展示区 ================= */
+        .img-container { width: 100%; flex-grow: 1; background: #f8f9fa; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 250px; border: 1px solid #ebeef5; }
+        .img-container img { max-width: 100%; max-height: 250px; object-fit: contain; display: none; }
+        .placeholder-text { color: #c0c4cc; font-size: 14px; }
+
+        /* ================= 区域 4：检测结果区 ================= */
+        .result-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .result-label { color: #606266; font-size: 14px; }
+
+        .badge { padding: 5px 12px; border-radius: 4px; font-size: 14px; font-weight: bold; display: inline-block;}
+        .badge-danger { background-color: #d32f2f; color: white; }
+        .badge-primary { background-color: #0052d9; color: white; }
+        .badge-default { background-color: #e4e7ed; color: #909399; }
+
+        .confidence-val { font-size: 28px; font-weight: bold; color: #d32f2f; }
+        .tags-container { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+        .tag { background-color: #fde2e2; color: #d32f2f; padding: 4px 8px; border-radius: 4px; font-size: 12px; border: 1px solid #fbc4c4; }
+        .meta-info { font-size: 12px; color: #909399; display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-top: 15px; border-top: 1px dashed #ebeef5; }
+
+        /* ================= 下半部分：历史记录表格与分页 ================= */
+        /* 表格滚动容器 */
+        .table-wrapper { width: 100%; max-height: 350px; overflow-y: auto; border-bottom: 1px solid #ebeef5; }
+
+        /* 美化自定义滚动条 */
+        .table-wrapper::-webkit-scrollbar { width: 8px; height: 8px; }
+        .table-wrapper::-webkit-scrollbar-thumb { background: #c0c4cc; border-radius: 4px; }
+        .table-wrapper::-webkit-scrollbar-track { background: #f5f7fa; }
+
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+
+        /* 冻结表头：滚动时表头不跟着跑 */
+        th { background-color: #f5f7fa; color: #606266; padding: 12px 15px; font-weight: 600; border-bottom: 1px solid #ebeef5; position: sticky; top: 0; z-index: 10; }
+        td { padding: 12px 15px; border-bottom: 1px solid #ebeef5; color: #606266; vertical-align: middle; }
+        tr:hover { background-color: #f8f9fa; }
+        .action-danger { color: #d32f2f; text-decoration: none; cursor: pointer; transition: 0.2s;}
+        .action-danger:hover { color: #b71c1c; text-decoration: underline; }
+
+        /* 分页控件样式 */
+        .pagination { display: flex; justify-content: flex-end; align-items: center; padding-top: 15px; gap: 15px; }
+        .page-btn { padding: 6px 12px; border: 1px solid #dcdfe6; background: #fff; cursor: pointer; border-radius: 4px; color: #606266; font-size: 13px; transition: 0.2s;}
+        .page-btn:hover:not(:disabled) { border-color: #0052d9; color: #0052d9; }
+        .page-btn:disabled { background: #f5f7fa; color: #c0c4cc; cursor: not-allowed; border-color: #ebeef5; }
+        .page-info { font-size: 13px; color: #606266; }
+
+        .loading-mask { display: none; color: #0052d9; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="dashboard-container">
+    <div class="top-panel">
+        <div class="card">
+            <div class="card-header">上传邮件截图</div>
+            <div class="upload-area" id="drop-zone">
+                <div class="upload-icon">☁️</div>
+                <div style="font-weight: 500; color:#303133; margin-bottom: 5px;">拖拽文件到此或点击上传</div>
+                <div style="font-size: 12px;">支持 JPG、PNG 格式，大小不超过 10MB</div>
+                <input type="file" id="file-input" style="display: none;" accept="image/png, image/jpeg" multiple>
+            </div>
+            <button class="btn btn-primary" id="btn-single">上传并单张检测</button>
+            <button class="btn btn-outline" id="btn-batch" style="margin-bottom: 10px;">批量导入检测</button>
+            <a href="/export_csv" style="font-size: 13px; color: #0052d9; text-decoration: none; display: block; text-align: center;">📥 导出全部审计日志 (CSV)</a>
+        </div>
+
+        <div class="card">
+            <div class="card-header">原始图片</div>
+            <div class="img-container">
+                <span class="placeholder-text" id="orig-placeholder">等待上传...</span>
+                <img id="img-original" alt="原始截图">
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">风险热力图</div>
+            <div class="img-container">
+                <span class="placeholder-text" id="heat-placeholder">等待分析...</span>
+                <span class="loading-mask" id="heat-loading">算法推理中...</span>
+                <img id="img-heatmap" alt="热力图">
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">检测结果</div>
+            <div style="flex-grow: 1;">
+                <div class="result-row">
+                    <span class="result-label">检测定性：</span>
+                    <span class="badge badge-default" id="res-badge">未检测</span>
+                </div>
+                <div class="result-row">
+                    <span class="result-label">置信度：</span>
+                    <span class="confidence-val" id="res-conf">--</span>
+                </div>
+                <div style="margin-bottom: 10px;" class="result-label">风险高亮区域：</div>
+                <div class="tags-container" id="res-tags">
+                    <span style="color:#c0c4cc; font-size: 12px;">暂无数据</span>
+                </div>
+            </div>
+
+            <div class="meta-info">
+                <div>🕒 处理时间：<span id="meta-time">--</span></div>
+                <div>⚙️ 调度模型：MobileNetV2-GradCAM</div>
+                <div>✅ 运行状态：<span id="meta-status">待机中</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">检测审计日志</div>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>检测时间</th>
+                        <th>文件名称</th>
+                        <th>判定结论</th>
+                        <th>置信度</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="history-tbody">
+                    </tbody>
+            </table>
+        </div>
+        <div class="pagination" id="pagination-controls">
+            </div>
+    </div>
+</div>
+
+<script>
+    // ================= 全局状态：用于管理表格和分页 ================= //
+    let globalHistoryData = []; // 存储所有记录
+    let currentPage = 1;        // 当前所在页码
+    const pageSize = 5;         // 每页显示多少条记录（您可以自己修改这个数字，比如改成10）
+
+    // ================= 1. 拖拽与点击选取图片 ================= //
+    document.getElementById('drop-zone').addEventListener('click', () => {
+        document.getElementById('file-input').click();
+    });
+
+    document.getElementById('file-input').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('orig-placeholder').style.display = 'none';
+                const imgOrig = document.getElementById('img-original');
+                imgOrig.src = e.target.result;
+                imgOrig.style.display = 'block';
+            }
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // ================= 2. 单张检测异步请求后端接口 ================= //
+    document.getElementById('btn-single').addEventListener('click', function() {
+        const fileInput = document.getElementById('file-input');
+        if(!fileInput.files || fileInput.files.length === 0) {
+            alert("请先选择一张需要检测的图片！");
+            return;
+        }
+
+        const targetFile = fileInput.files[0];
+        const currentFileName = targetFile.name;
+
+        // UI加载状态
+        document.getElementById('heat-placeholder').style.display = 'none';
+        document.getElementById('img-heatmap').style.display = 'none';
+        document.getElementById('heat-loading').style.display = 'block';
+        document.getElementById('meta-status').innerText = '模型推理中...';
+        document.getElementById('meta-status').style.color = '#e6a23c';
+        document.getElementById('res-badge').className = 'badge badge-default';
+        document.getElementById('res-badge').innerText = '检测中...';
+
+        const formData = new FormData();
+        formData.append('file', targetFile);
+
+        fetch('/api/detect', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP 异常状态码: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            if(data.error) {
+                alert("后端报错: " + data.error);
+                document.getElementById('heat-loading').style.display = 'none';
+                document.getElementById('meta-status').innerText = '检测失败: ' + data.error;
+                document.getElementById('meta-status').style.color = '#d32f2f';
+                document.getElementById('res-badge').innerText = '检测失败';
+            } else {
+                updateDashboard(data, currentFileName);
+            }
+        })
+        .catch(error => {
+            console.error('通信失败:', error);
+            document.getElementById('heat-loading').style.display = 'none';
+            document.getElementById('meta-status').innerText = '网络或服务器通信错误';
+            document.getElementById('meta-status').style.color = '#d32f2f';
+            document.getElementById('res-badge').innerText = '通信失败';
+        });
+    });
+
+    // ================= 2.5 批量检测异步请求逻辑 ================= //
+    document.getElementById('btn-batch').addEventListener('click', function() {
+        const fileInput = document.getElementById('file-input');
+
+        // 检查是否选择了文件
+        if(!fileInput.files || fileInput.files.length === 0) {
+            alert("请先选择需要批量检测的图片（可按住 Ctrl 或框选多张）！");
+            return;
+        }
+
+        const files = fileInput.files;
+
+        // 触发加载状态
+        document.getElementById('meta-status').innerText = `正在批量处理 ${files.length} 张图片...`;
+        document.getElementById('meta-status').style.color = '#e6a23c';
+
+        // 核心：将所有文件循环追加到 FormData 中
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+            // 注意这里的键名 'file' 必须和后端 request.files.getlist('file') 保持一致
+            formData.append('file', files[i]);
+        }
+
+        // 发起网络请求
+        fetch('/api/detect_batch', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.error) {
+                alert("批量检测失败: " + data.error);
+                document.getElementById('meta-status').innerText = '批量检测失败';
+                document.getElementById('meta-status').style.color = '#d32f2f';
+            } else {
+                alert(`✅ 批量处理完成！\n共成功检测了 ${data.total} 张图片。`);
+                document.getElementById('meta-status').innerText = '批量处理完成';
+                document.getElementById('meta-status').style.color = '#2e7d32';
+
+                // 批量处理不会更新上面的单张热力图面板，而是直接刷新下方的历史记录表格
+                fetchHistoryData();
+            }
+        })
+        .catch(error => {
+            console.error('批量检测网络错误:', error);
+            alert("网络通信失败！");
+            document.getElementById('meta-status').innerText = '网络通信错误';
+            document.getElementById('meta-status').style.color = '#d32f2f';
+        });
+    });
+
+    // ================= 3. 结果面板渲染逻辑 (单张) ================= //
+    function updateDashboard(data, fileName) {
+        document.getElementById('heat-loading').style.display = 'none';
+        const imgHeatmap = document.getElementById('img-heatmap');
+
+        if (data.heatmap_base64 && data.heatmap_base64 !== "") {
+            imgHeatmap.src = data.heatmap_base64;
+            imgHeatmap.style.display = 'block';
+        } else {
+            document.getElementById('heat-placeholder').style.display = 'block';
+            document.getElementById('heat-placeholder').innerText = '热力图生成失败';
+        }
+
+        const badge = document.getElementById('res-badge');
+        const confVal = document.getElementById('res-conf');
+        const tagsBox = document.getElementById('res-tags');
+
+        if(data.result_type === 'phishing') {
+            badge.className = 'badge badge-danger';
+            badge.innerText = data.result_text || '钓鱼邮件';
+            confVal.style.color = '#d32f2f';
+        } else {
+            badge.className = 'badge badge-primary';
+            badge.innerText = data.result_text || '正常邮件';
+            confVal.style.color = '#0052d9';
+        }
+
+        confVal.innerText = data.confidence || '未知';
+
+        tagsBox.innerHTML = '';
+        if (data.risk_tags && data.risk_tags.length > 0) {
+            data.risk_tags.forEach(tag => {
+                const span = document.createElement('span');
+                span.className = 'tag';
+                if(data.result_type !== 'phishing'){
+                    span.style.backgroundColor = '#e0ebff';
+                    span.style.color = '#0052d9';
+                    span.style.border = '1px solid #b3d0ff';
+                }
+                span.innerText = tag;
+                tagsBox.appendChild(span);
+            });
+        } else {
+            tagsBox.innerHTML = '<span style="color:#c0c4cc; font-size: 12px;">无特征标签</span>';
+        }
+
+        document.getElementById('meta-time').innerText = data.process_time || '--';
+        document.getElementById('meta-status').innerText = '分析完成';
+        document.getElementById('meta-status').style.color = '#2e7d32';
+
+        // 🌟 新逻辑：将新记录推入全局数组的最前面，并附带后端返回的真实 ID
+        globalHistoryData.unshift({
+            id: data.id,
+            timestamp: document.getElementById('meta-time').innerText,
+            filename: fileName,
+            result_text: badge.innerText,
+            confidence: confVal.innerText,
+            result_type: data.result_type
+        });
+        currentPage = 1; // 重置到第一页以查看最新数据
+        renderTableAndPagination();
+    }
+
+    // ================= 4. 渲染表格和分页控件 ================= //
+    function renderTableAndPagination() {
+        const tbody = document.getElementById('history-tbody');
+        tbody.innerHTML = ''; // 清空当前表格
+
+        // 计算总页数
+        const totalPages = Math.ceil(globalHistoryData.length / pageSize) || 1;
+        // 确保 currentPage 不会越界
+        if (currentPage > totalPages) currentPage = totalPages;
+
+        // 计算当前页需要切片的数据范围
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+        const pageData = globalHistoryData.slice(startIndex, endIndex);
+
+        // 渲染表格行
+        pageData.forEach(item => {
+            let badgeHTML = '';
+            if (item.result_type === 'phishing') {
+                badgeHTML = `<span class="badge badge-danger">${item.result_text}</span>`;
+            } else {
+                badgeHTML = `<span class="badge badge-primary">${item.result_text}</span>`;
+            }
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.timestamp}</td>
+                <td>${item.filename}</td>
+                <td>${badgeHTML}</td>
+                <td style="font-weight: bold; color: #303133;">${item.confidence}</td>
+                <td>
+                    <span class="action-danger" onclick="deleteRecord(${item.id})">删除</span>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // 渲染底部页码控制器
+        const paginationDiv = document.getElementById('pagination-controls');
+        paginationDiv.innerHTML = '';
+
+        // 上一页按钮
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'page-btn';
+        prevBtn.innerText = '上一页';
+        prevBtn.disabled = currentPage === 1;
+        prevBtn.onclick = () => {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTableAndPagination();
+            }
+        };
+        paginationDiv.appendChild(prevBtn);
+
+        // 页码信息
+        const pageInfo = document.createElement('span');
+        pageInfo.className = 'page-info';
+        pageInfo.innerText = ` 第 ${currentPage} / ${totalPages} 页 （共 ${globalHistoryData.length} 条记录） `;
+        paginationDiv.appendChild(pageInfo);
+
+        // 下一页按钮
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'page-btn';
+        nextBtn.innerText = '下一页';
+        nextBtn.disabled = currentPage === totalPages || totalPages === 0;
+        nextBtn.onclick = () => {
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderTableAndPagination();
+            }
+        };
+        paginationDiv.appendChild(nextBtn);
+    }
+
+    // ================= 5. 拉取历史记录函数封装 ================= //
+    function fetchHistoryData() {
+        fetch('/history')
+            .then(response => response.json())
+            .then(data => {
+                if (data.history && data.history.length > 0) {
+                    globalHistoryData = data.history;
+                    currentPage = 1;
+                    renderTableAndPagination(); // 触发页面渲染
+                }
+            })
+            .catch(error => {
+                console.error('加载历史记录失败:', error);
+            });
+    }
+
+    // 页面加载自动获取历史记录
+    window.onload = fetchHistoryData;
+
+    // ================= 6. 真实的后端交互删除逻辑 ================= //
+    function deleteRecord(id) {
+        if (id === undefined || id === null) {
+            alert("无法删除：没有找到记录的 ID！\n请检查后端 /api/detect 和 /history 接口是否已经返回了 'id' 字段。");
+            return;
+        }
+
+        // 步骤1：弹出二次确认框
+        if (!confirm("确定要永久删除这条检测记录吗？")) {
+            return; // 用户点击了取消
+        }
+
+        // 步骤2：向后端发起异步删除请求
+        fetch('/delete_history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: id }) // 将需要删除的 ID 传给后端
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // 步骤3：删除成功，更新前端的全局数据数组，过滤掉被删掉的这个 ID
+                globalHistoryData = globalHistoryData.filter(item => item.id !== id);
+
+                // 步骤4：无刷新重新渲染表格（如果当前页被删空，会自动在前一步处理跳回上一页）
+                renderTableAndPagination();
+            } else {
+                alert("删除失败：" + data.error);
+            }
+        })
+        .catch(error => {
+            console.error('删除请求失败:', error);
+            alert("网络通信失败，无法执行删除操作！");
+        });
+    }
+</script>
+</body>
+</html>
